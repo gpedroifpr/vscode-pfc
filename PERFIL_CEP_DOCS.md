@@ -1,3 +1,20 @@
+1. Antes de começar a programar (Sempre faça isso!)
+Para baixar o que seus amigos fizeram e não dar conflito:
+code
+Bash
+
+git pull origin main
+
+2. Terminou uma funcionalidade? (O "Upload")
+Sempre que fizerem algo legal (ex: criaram a tela de login), façam o trio de comandos:
+code
+Bash
+
+git add .
+git commit -m "Explique aqui o que você fez"
+git push
+
+
 # 📋 Documentação - Tela de Perfil com Consultor de CEP
 
 ## Visão Geral

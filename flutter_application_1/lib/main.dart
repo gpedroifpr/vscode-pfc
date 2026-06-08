@@ -3,8 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
+void main() async {
+  // Carregar variáveis de ambiente do arquivo .env
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    // Se .env não for encontrado, continuar mesmo assim
+    // (importante para builds de produção/web)
+    print('Aviso: Arquivo .env não encontrado. Usando variáveis padrão.');
+  }
   runApp(const DevStackApp());
 }
 
@@ -50,10 +59,7 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _isLoadingAI = false;
   String _selectedAI = 'gemini'; // 'gemini' ou 'openai'
 
-  // API Keys
-  final String geminiApiKey = 'AIzaSyD_cZTIO0HIu7aV8amRcDUMfNq9InyLWDo';
-  final String openaiApiKey = 'sk-proj-U2w5E8K1q9L2mN3oP4qR5sT6uV7wX8yZ'; // Coloque sua chave aqui
-
+  // Cores
   final Color primaryCyan = const Color(0xFF4EE2EC); // Ciano neon
   final Color cardColor = const Color(0xFF162126); // Cinza azulado escuro
   final List<String> tags = ['Python', 'React', 'AI', 'JavaScript'];
@@ -983,8 +989,21 @@ class _FeedScreenState extends State<FeedScreen> {
     });
 
     try {
-      // Fazer requisição HTTP direta à API do Gemini
-      final apiKey = 'AIzaSyD_cZTIO0HIu7aV8amRcDUMfNq9InyLWDo';
+      // Obter chave API do arquivo .env
+      final apiKey = dotenv.env['GEMINI_API_KEY'];
+      
+      if (apiKey == null || apiKey.isEmpty || apiKey.contains('SUA_CHAVE')) {
+        setState(() {
+          _chatMessages.add(ChatMessage(
+            text: '❌ Erro: Chave API do Gemini não configurada!\n\nPor favor:\n1. Vá para https://aistudio.google.com/app/apikeys\n2. Crie uma nova chave API\n3. Adicione ao arquivo .env: GEMINI_API_KEY=sua_chave_aqui',
+            isUser: false,
+            timestamp: DateTime.now(),
+          ));
+          _isLoadingAI = false;
+        });
+        return;
+      }
+
       final url = Uri.parse(
         'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey',
       );
@@ -1001,6 +1020,9 @@ class _FeedScreenState extends State<FeedScreen> {
             }
           ]
         }),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => http.Response('Timeout', 504),
       );
 
       if (response.statusCode == 200) {
@@ -1018,7 +1040,25 @@ class _FeedScreenState extends State<FeedScreen> {
       } else if (response.statusCode == 429) {
         setState(() {
           _chatMessages.add(ChatMessage(
-            text: '⏳ Limite de requisições atingido. Por favor, aguarde alguns minutos antes de fazer outra pergunta.',
+            text: '⏳ Limite de requisições atingido (429).\n\nIsso significa:\n• Você excedeu a quota diária (1000 req/dia no plano gratuito)\n• Aguarde até amanhã ou atualize para um plano pago\n• Acesse: https://console.cloud.google.com/billing',
+            isUser: false,
+            timestamp: DateTime.now(),
+          ));
+          _isLoadingAI = false;
+        });
+      } else if (response.statusCode == 401) {
+        setState(() {
+          _chatMessages.add(ChatMessage(
+            text: '❌ Erro 401: Chave API inválida ou expirada.\n\nSolução:\n1. Verifique a chave no arquivo .env\n2. Gere uma nova em: https://aistudio.google.com/app/apikeys',
+            isUser: false,
+            timestamp: DateTime.now(),
+          ));
+          _isLoadingAI = false;
+        });
+      } else if (response.statusCode == 504) {
+        setState(() {
+          _chatMessages.add(ChatMessage(
+            text: '⏱️ Timeout: A IA demorou muito para responder.\n\nTente novamente em alguns segundos.',
             isUser: false,
             timestamp: DateTime.now(),
           ));
@@ -1027,7 +1067,7 @@ class _FeedScreenState extends State<FeedScreen> {
       } else {
         setState(() {
           _chatMessages.add(ChatMessage(
-            text: '❌ Erro ao conectar com a IA. Código de erro: ${response.statusCode}',
+            text: '❌ Erro ${response.statusCode}:\n${response.body.substring(0, 200)}',
             isUser: false,
             timestamp: DateTime.now(),
           ));
@@ -1037,7 +1077,7 @@ class _FeedScreenState extends State<FeedScreen> {
     } catch (e) {
       setState(() {
         _chatMessages.add(ChatMessage(
-          text: '❌ Erro ao conectar com a IA: ${e.toString()}',
+          text: '❌ Erro de conexão: ${e.toString()}\n\nVerifique sua conexão com a internet.',
           isUser: false,
           timestamp: DateTime.now(),
         ));
