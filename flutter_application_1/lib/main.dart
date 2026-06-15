@@ -561,7 +561,35 @@ class _FeedScreenState extends State<FeedScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Icon(Icons.search, color: Colors.grey),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.search, color: Colors.grey),
+                onPressed: () {
+                  setState(() {
+                    _selectedIndex = 1; // Search
+                  });
+                },
+              ),
+              IconButton(
+                icon: Stack(
+                  children: [
+                    Icon(Icons.notifications_none, color: Colors.grey),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: CircleAvatar(radius: 4, backgroundColor: Colors.red),
+                    )
+                  ],
+                ),
+                onPressed: () {
+                  setState(() {
+                    _selectedIndex = 2; // Notifications
+                  });
+                },
+              ),
+            ],
+          ),
           Expanded(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -580,35 +608,14 @@ class _FeedScreenState extends State<FeedScreen> {
               ],
             ),
           ),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: _showAISettingsModal,
-                child: Icon(
-                  Icons.settings,
-                  color: _selectedAI == 'gemini' ? Colors.purple : primaryCyan,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 15),
-              const Stack(
-                children: [
-                  Icon(Icons.notifications_none, color: Colors.grey),
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: CircleAvatar(radius: 4, backgroundColor: Colors.red),
-                  )
-                ],
-              ),
-              const SizedBox(width: 15),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: primaryCyan.withValues(alpha: 0.3),
-                child: Icon(Icons.person, color: primaryCyan, size: 20),
-              ),
-            ],
-          )
+          GestureDetector(
+            onTap: _showAISettingsModal,
+            child: Icon(
+              Icons.settings,
+              color: primaryCyan,
+              size: 24,
+            ),
+          ),
         ],
       ),
     );
@@ -1234,12 +1241,13 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildBottomNav() {
     final navItems = [
       {'icon': Icons.home_filled, 'label': 'Home'},
-      {'icon': Icons.search, 'label': 'Search'},
-      {'icon': Icons.notifications_none, 'label': 'Notif'},
       {'icon': Icons.people_outline, 'label': 'Communities'},
       {'icon': Icons.person_outline, 'label': 'Profile'},
       {'icon': Icons.psychology, 'label': 'AI Chat'},
     ];
+
+    // Mapa de índices para corresponder aos _selectedIndex originais
+    final indexMap = [0, 3, 4, 5]; // Home, Communities, Profile, AI Chat
 
     return Container(
       color: const Color(0xFF0B1215),
@@ -1251,14 +1259,14 @@ class _FeedScreenState extends State<FeedScreen> {
             onTap: () {
               print('Clicado em aba: $index');
               setState(() {
-                _selectedIndex = index;
+                _selectedIndex = indexMap[index];
               });
             },
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
               child: Icon(
                 navItems[index]['icon'] as IconData,
-                color: _selectedIndex == index ? primaryCyan : Colors.grey,
+                color: _selectedIndex == indexMap[index] ? primaryCyan : Colors.grey,
                 size: 24,
               ),
             ),
