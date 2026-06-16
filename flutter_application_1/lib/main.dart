@@ -118,9 +118,14 @@ class FeedScreen extends StatefulWidget {
   State<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> {
+class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   int _selectedIndex = 0;
   int _selectedTagIndex = 3;
+  bool _isShowingSearch = false;
+  bool _isShowingNotifications = false;
+  late AnimationController _transitionController;
+  late Animation<double> _fadeAnimation;
+  
   late List<ChatMessage> _chatMessages = [];
   late List<Post> _allPosts = [];
   late List<Post> _filteredPosts = [];
@@ -155,6 +160,15 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
+    _transitionController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _transitionController, curve: Curves.easeInOut),
+    );
+    _transitionController.forward();
+    
     _profileNameController = TextEditingController();
     _profileEmailController = TextEditingController();
     _profilePhoneController = TextEditingController();
@@ -348,6 +362,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   void dispose() {
+    _transitionController.dispose();
     _profileNameController.dispose();
     _profileEmailController.dispose();
     _profilePhoneController.dispose();
@@ -362,6 +377,11 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
+  void _changeScreen() {
+    _transitionController.reset();
+    _transitionController.forward();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -372,7 +392,12 @@ class _FeedScreenState extends State<FeedScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildHeader(),
-                Expanded(child: _buildContent()),
+                Expanded(
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: _buildContent(),
+                  ),
+                ),
               ],
             ),
             _buildFloatingAskButton(),
@@ -384,18 +409,21 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildContent() {
+    if (_isShowingSearch) {
+      return _buildSearchContent();
+    }
+    if (_isShowingNotifications) {
+      return _buildNotificationsContent();
+    }
+    
     switch (_selectedIndex) {
       case 0:
         return _buildFeedContent();
       case 1:
-        return _buildSearchContent();
-      case 2:
-        return _buildNotificationsContent();
-      case 3:
         return _buildCommunitiesContent();
-      case 4:
+      case 2:
         return _buildProfileContent();
-      case 5:
+      case 3:
         return _buildAIConversationContent();
       default:
         return _buildFeedContent();
@@ -876,19 +904,41 @@ class _FeedScreenState extends State<FeedScreen> {
         children: [
           Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.search, color: Colors.grey),
-                onPressed: () {
-                  setState(() => _selectedIndex = 1);
-                },
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: _isShowingSearch ? primaryCyan.withValues(alpha: 0.2) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: Icon(Icons.search, color: _isShowingSearch ? primaryCyan : Colors.grey),
+                  onPressed: () {
+                    _changeScreen();
+                    setState(() {
+                      _isShowingSearch = !_isShowingSearch;
+                      _isShowingNotifications = false;
+                    });
+                  },
+                ),
               ),
               Stack(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.notifications_none, color: Colors.grey),
-                    onPressed: () {
-                      setState(() => _selectedIndex = 2);
-                    },
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    decoration: BoxDecoration(
+                      color: _isShowingNotifications ? primaryCyan.withValues(alpha: 0.2) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: IconButton(
+                      icon: Icon(Icons.notifications_none, color: _isShowingNotifications ? primaryCyan : Colors.grey),
+                      onPressed: () {
+                        _changeScreen();
+                        setState(() {
+                          _isShowingNotifications = !_isShowingNotifications;
+                          _isShowingSearch = false;
+                        });
+                      },
+                    ),
                   ),
                   Positioned(
                     right: 8,
@@ -1493,8 +1543,6 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildBottomNav() {
     final navItems = [
       {'icon': Icons.home_filled, 'label': 'Home'},
-      {'icon': Icons.search, 'label': 'Search'},
-      {'icon': Icons.notifications_none, 'label': 'Notifs'},
       {'icon': Icons.people_outline, 'label': 'Communities'},
       {'icon': Icons.person_outline, 'label': 'Profile'},
       {'icon': Icons.psychology, 'label': 'AI Chat'},
@@ -1507,16 +1555,32 @@ class _FeedScreenState extends State<FeedScreen> {
         children: List.generate(
           navItems.length,
           (index) => GestureDetector(
-            onTap: () => setState(() => _selectedIndex = index),
-            child: Container(
+            onTap: () {
+              _changeScreen();
+              setState(() {
+                _selectedIndex = index;
+                _isShowingSearch = false;
+                _isShowingNotifications = false;
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
+              decoration: BoxDecoration(
+                color: _selectedIndex == index ? primaryCyan.withValues(alpha: 0.1) : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    navItems[index]['icon'] as IconData,
-                    color: _selectedIndex == index ? primaryCyan : Colors.grey,
-                    size: 24,
+                  AnimatedScale(
+                    duration: const Duration(milliseconds: 200),
+                    scale: _selectedIndex == index ? 1.1 : 1.0,
+                    child: Icon(
+                      navItems[index]['icon'] as IconData,
+                      color: _selectedIndex == index ? primaryCyan : Colors.grey,
+                      size: 24,
+                    ),
                   ),
                   Text(navItems[index]['label'] as String,
                       style: TextStyle(
