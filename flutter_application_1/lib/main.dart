@@ -4,14 +4,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   // Carregar variáveis de ambiente do arquivo .env
   try {
     await dotenv.load(fileName: '.env');
   } catch (e) {
-    // Se .env não for encontrado, continuar mesmo assim
-    // (importante para builds de produção/web)
     print('Aviso: Arquivo .env não encontrado. Usando variáveis padrão.');
   }
   runApp(const DevStackApp());
@@ -25,14 +24,15 @@ class DevStackApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0B1215), // Fundo bem escuro
+        scaffoldBackgroundColor: const Color(0xFF0B1215),
       ),
       home: const FeedScreen(),
     );
   }
 }
 
-// Classe para representar uma mensagem
+// ============= MODELOS DE DADOS =============
+
 class ChatMessage {
   final String text;
   final bool isUser;
@@ -45,6 +45,72 @@ class ChatMessage {
   });
 }
 
+class Post {
+  final String id;
+  final String username;
+  final String userHandle;
+  final String title;
+  final String description;
+  final String code;
+  final List<String> tags;
+  final int likes;
+  final int comments;
+  final String timeAgo;
+  bool isLiked;
+  bool isFavorited;
+
+  Post({
+    required this.id,
+    required this.username,
+    required this.userHandle,
+    required this.title,
+    required this.description,
+    required this.code,
+    required this.tags,
+    required this.likes,
+    required this.comments,
+    required this.timeAgo,
+    this.isLiked = false,
+    this.isFavorited = false,
+  });
+}
+
+class Notification {
+  final String id;
+  final String title;
+  final String message;
+  final String timeAgo;
+  final String type;
+  bool isRead;
+
+  Notification({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.timeAgo,
+    required this.type,
+    this.isRead = false,
+  });
+}
+
+class Community {
+  final String id;
+  final String name;
+  final String description;
+  final int members;
+  final String icon;
+  bool isFollowed;
+
+  Community({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.members,
+    required this.icon,
+    this.isFollowed = false,
+  });
+}
+
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
@@ -54,14 +120,21 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   int _selectedIndex = 0;
-  int _selectedTagIndex = 3; // JavaScript começa selecionado
+  int _selectedTagIndex = 3;
   late List<ChatMessage> _chatMessages = [];
-  bool _isLoadingAI = false;
-  String _selectedAI = 'gemini'; // 'gemini' ou 'openai'
+  late List<Post> _allPosts = [];
+  late List<Post> _filteredPosts = [];
+  late List<Notification> _notifications = [];
+  late List<Community> _communities = [];
+  late List<String> _searchHistory = [];
 
-  // Cores
-  final Color primaryCyan = const Color(0xFF4EE2EC); // Ciano neon
-  final Color cardColor = const Color(0xFF162126); // Cinza azulado escuro
+  bool _isLoadingAI = false;
+  String _selectedAI = 'gemini';
+  String _searchQuery = '';
+  TextEditingController _searchController = TextEditingController();
+
+  final Color primaryCyan = const Color(0xFF4EE2EC);
+  final Color cardColor = const Color(0xFF162126);
   final List<String> tags = ['Python', 'React', 'AI', 'JavaScript'];
 
   // Profile Controllers
@@ -92,6 +165,185 @@ class _FeedScreenState extends State<FeedScreen> {
     _profileEstadoController = TextEditingController();
     _profileNumeroController = TextEditingController();
     _profileComplementoController = TextEditingController();
+
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    _allPosts = _generateSamplePosts();
+    _filteredPosts = _allPosts;
+    _notifications = _generateSampleNotifications();
+    _communities = _generateSampleCommunities();
+    _searchHistory = await _loadSearchHistory();
+    setState(() {});
+  }
+
+  List<Post> _generateSamplePosts() {
+    return [
+      Post(
+        id: '1',
+        username: 'Alex Chen',
+        userHandle: '@techguru',
+        title: 'Optimizing React Hooks for Performance',
+        description: 'Learn the best practices for using useCallback and useMemo in your React applications.',
+        code: 'useCallback(() => {\n  const fetchData = async () => {\n    // fetch logic\n  };\n}, [deps]);',
+        tags: ['React', 'JavaScript', 'Performance'],
+        likes: 1489,
+        comments: 42,
+        timeAgo: '3h ago',
+      ),
+      Post(
+        id: '2',
+        username: 'Sarah Kumar',
+        userHandle: '@pythonista',
+        title: 'Advanced Python Async/Await Patterns',
+        description: 'Master concurrent programming with asyncio for high-performance applications.',
+        code: 'async def fetch_data():\n  tasks = [fetch_url(url) for url in urls]\n  results = await asyncio.gather(*tasks)',
+        tags: ['Python', 'Async', 'Backend'],
+        likes: 856,
+        comments: 23,
+        timeAgo: '5h ago',
+      ),
+      Post(
+        id: '3',
+        username: 'Mike Wilson',
+        userHandle: '@fullstackdev',
+        title: 'Building Real-time Chat with WebSockets',
+        description: 'Complete guide to implementing WebSockets in your web applications.',
+        code: 'const socket = io();\nsocket.on("message", (data) => {\n  console.log(data);\n});',
+        tags: ['WebSocket', 'JavaScript', 'Real-time'],
+        likes: 623,
+        comments: 15,
+        timeAgo: '7h ago',
+      ),
+      Post(
+        id: '4',
+        username: 'Emma Rodriguez',
+        userHandle: '@airesearcher',
+        title: 'Implementing Transformer Models from Scratch',
+        description: 'Deep dive into attention mechanisms and neural network architecture.',
+        code: 'class Transformer(nn.Module):\n  def forward(self, x):\n    return self.attention(x)',
+        tags: ['AI', 'Python', 'ML'],
+        likes: 2104,
+        comments: 67,
+        timeAgo: '12h ago',
+      ),
+      Post(
+        id: '5',
+        username: 'James Park',
+        userHandle: '@devops_ninja',
+        title: 'Docker Container Orchestration Best Practices',
+        description: 'Kubernetes tips and tricks for production deployments.',
+        code: 'apiVersion: v1\nkind: Pod\nmetadata:\n  name: nginx',
+        tags: ['Docker', 'DevOps', 'Kubernetes'],
+        likes: 456,
+        comments: 12,
+        timeAgo: '1d ago',
+      ),
+    ];
+  }
+
+  List<Notification> _generateSampleNotifications() {
+    return [
+      Notification(
+        id: '1',
+        title: 'New Comment',
+        message: '@sarah_dev commented on your post about React Hooks',
+        timeAgo: '2 min ago',
+        type: 'comment',
+      ),
+      Notification(
+        id: '2',
+        title: 'New Follower',
+        message: '@code_master started following you',
+        timeAgo: '15 min ago',
+        type: 'follow',
+      ),
+      Notification(
+        id: '3',
+        title: 'Community Invite',
+        message: 'You were invited to join "AI Enthusiasts" community',
+        timeAgo: '1h ago',
+        type: 'community',
+      ),
+      Notification(
+        id: '4',
+        title: 'Post Trending',
+        message: 'Your post "Building Real-time Apps" is trending!',
+        timeAgo: '3h ago',
+        type: 'trending',
+      ),
+    ];
+  }
+
+  List<Community> _generateSampleCommunities() {
+    return [
+      Community(
+        id: '1',
+        name: 'React Developers',
+        description: 'Connect with React enthusiasts and share best practices',
+        members: 15420,
+        icon: '⚛️',
+      ),
+      Community(
+        id: '2',
+        name: 'Python Masters',
+        description: 'Advanced Python programming and best practices',
+        members: 22890,
+        icon: '🐍',
+      ),
+      Community(
+        id: '3',
+        name: 'AI & Machine Learning',
+        description: 'Explore cutting-edge AI and ML technologies',
+        members: 18760,
+        icon: '🤖',
+      ),
+      Community(
+        id: '4',
+        name: 'DevOps Engineers',
+        description: 'Share DevOps experiences and tools',
+        members: 12340,
+        icon: '⚙️',
+      ),
+      Community(
+        id: '5',
+        name: 'Web Design',
+        description: 'Modern web design and UX/UI tips',
+        members: 9876,
+        icon: '🎨',
+      ),
+    ];
+  }
+
+  Future<List<String>> _loadSearchHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList('search_history') ?? [];
+  }
+
+  Future<void> _addToSearchHistory(String query) async {
+    if (query.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    _searchHistory.removeWhere((item) => item == query);
+    _searchHistory.insert(0, query);
+    if (_searchHistory.length > 10) _searchHistory = _searchHistory.take(10).toList();
+    await prefs.setStringList('search_history', _searchHistory);
+  }
+
+  void _searchPosts(String query) {
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredPosts = _allPosts;
+      } else {
+        _filteredPosts = _allPosts
+            .where((post) =>
+                post.title.toLowerCase().contains(query.toLowerCase()) ||
+                post.description.toLowerCase().contains(query.toLowerCase()) ||
+                post.tags.any((tag) => tag.toLowerCase().contains(query.toLowerCase())))
+            .toList();
+      }
+    });
   }
 
   @override
@@ -106,6 +358,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _profileEstadoController.dispose();
     _profileNumeroController.dispose();
     _profileComplementoController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -119,10 +372,7 @@ class _FeedScreenState extends State<FeedScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildHeader(),
-                // Conteúdo que muda conforme a aba selecionada - envolvido em Expanded
-                Expanded(
-                  child: _buildContent(),
-                ),
+                Expanded(child: _buildContent()),
               ],
             ),
             _buildFloatingAskButton(),
@@ -133,132 +383,280 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // NOVO: Método que controla qual conteúdo mostrar
   Widget _buildContent() {
     switch (_selectedIndex) {
-      case 0: // Home (Feed)
+      case 0:
         return _buildFeedContent();
-      case 1: // Search
+      case 1:
         return _buildSearchContent();
-      case 2: // Notifications
+      case 2:
         return _buildNotificationsContent();
-      case 3: // Communities
+      case 3:
         return _buildCommunitiesContent();
-      case 4: // Profile
+      case 4:
         return _buildProfileContent();
-      case 5: // AI Conversation
+      case 5:
         return _buildAIConversationContent();
       default:
         return _buildFeedContent();
     }
   }
 
-  // NOVO: Conteúdo da aba HOME
+  // ============= FEED CONTENT =============
+
   Widget _buildFeedContent() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Text(
             'My Feed',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold),
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20),
-          child: Text('Top Tags', style: TextStyle(color: Colors.grey)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text('Top Tags', style: TextStyle(color: Colors.grey, fontSize: 12)),
         ),
         _buildTagsRow(),
         Expanded(
-          child: ListView(
+          child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            children: [
-              _buildPostCard(),
-              _buildSimplePostCard("AI integration for prediction modeling in Python"),
-              _buildSimplePostCard("Deploying Docker containers to AWS Lambda"),
-              const SizedBox(height: 80),
-            ],
+            itemCount: _allPosts.length + 1,
+            itemBuilder: (context, index) {
+              if (index == _allPosts.length) {
+                return const SizedBox(height: 80);
+              }
+              return _buildPostCardWidget(_allPosts[index]);
+            },
           ),
         ),
       ],
     );
   }
 
-  // NOVO: Conteúdo da aba SEARCH
+  // ============= SEARCH CONTENT =============
+
   Widget _buildSearchContent() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.search, size: 60, color: primaryCyan),
-          const SizedBox(height: 16),
-          const Text(
-            'Buscar Posts',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            onChanged: _searchPosts,
+            onSubmitted: (query) {
+              _addToSearchHistory(query);
+            },
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Procurar posts, tags ou usuários...',
+              hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.5)),
+              prefixIcon: Icon(Icons.search, color: primaryCyan),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? GestureDetector(
+                      onTap: () {
+                        _searchController.clear();
+                        _searchPosts('');
+                      },
+                      child: Icon(Icons.close, color: primaryCyan),
+                    )
+                  : null,
+              filled: true,
+              fillColor: cardColor,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryCyan.withValues(alpha: 0.3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: primaryCyan),
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Procure por tags, tópicos ou usuários',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
-      ),
+        ),
+        Expanded(
+          child: _searchQuery.isEmpty
+              ? SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_searchHistory.isNotEmpty) ...[
+                          Text('Histórico de Buscas',
+                              style: TextStyle(color: primaryCyan, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _searchHistory
+                                .map((query) => GestureDetector(
+                                      onTap: () {
+                                        _searchController.text = query;
+                                        _searchPosts(query);
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: cardColor,
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(color: primaryCyan.withValues(alpha: 0.3)),
+                                        ),
+                                        child: Text(query, style: TextStyle(color: primaryCyan, fontSize: 12)),
+                                      ),
+                                    ))
+                                .toList(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _filteredPosts.length,
+                  itemBuilder: (context, index) => _buildPostCardWidget(_filteredPosts[index]),
+                ),
+        ),
+      ],
     );
   }
 
-  // NOVO: Conteúdo da aba NOTIFICATIONS
+  // ============= NOTIFICATIONS CONTENT =============
+
   Widget _buildNotificationsContent() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.notifications_none, size: 60, color: primaryCyan),
-          const SizedBox(height: 16),
-          const Text(
-            'Notificações',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _notifications.length,
+      itemBuilder: (context, index) {
+        final notif = _notifications[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white10),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Você não tem notificações',
-            style: TextStyle(color: Colors.grey),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: primaryCyan.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _getNotificationIcon(notif.type),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(notif.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 4),
+                    Text(notif.message, style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text(notif.timeAgo, style: TextStyle(color: Colors.grey.withValues(alpha: 0.7), fontSize: 10)),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    notif.isRead = !notif.isRead;
+                  });
+                },
+                child: Icon(
+                  notif.isRead ? Icons.check_circle : Icons.circle_outlined,
+                  color: primaryCyan,
+                  size: 20,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  // NOVO: Conteúdo da aba COMMUNITIES
+  Icon _getNotificationIcon(String type) {
+    switch (type) {
+      case 'comment':
+        return Icon(Icons.comment, color: primaryCyan);
+      case 'follow':
+        return Icon(Icons.person_add, color: primaryCyan);
+      case 'community':
+        return Icon(Icons.people, color: primaryCyan);
+      case 'trending':
+        return Icon(Icons.trending_up, color: primaryCyan);
+      default:
+        return Icon(Icons.notifications, color: primaryCyan);
+    }
+  }
+
+  // ============= COMMUNITIES CONTENT =============
+
   Widget _buildCommunitiesContent() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.people_outline, size: 60, color: primaryCyan),
-          const SizedBox(height: 16),
-          const Text(
-            'Comunidades',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _communities.length,
+      itemBuilder: (context, index) {
+        final community = _communities[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white10),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Explore comunidades interessantes',
-            style: TextStyle(color: Colors.grey),
+          child: Row(
+            children: [
+              Text(community.icon, style: const TextStyle(fontSize: 32)),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(community.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text(community.description, style: TextStyle(color: Colors.grey, fontSize: 11)),
+                    const SizedBox(height: 4),
+                    Text('${community.members} membros', style: TextStyle(color: Colors.grey.withValues(alpha: 0.7), fontSize: 10)),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: community.isFollowed ? Colors.grey.withValues(alpha: 0.3) : primaryCyan,
+                  foregroundColor: community.isFollowed ? primaryCyan : Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                onPressed: () {
+                  setState(() {
+                    community.isFollowed = !community.isFollowed;
+                  });
+                },
+                child: Text(community.isFollowed ? 'Seguindo' : 'Seguir', style: const TextStyle(fontSize: 12)),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  // NOVO: Conteúdo da aba PROFILE
+  // ============= PROFILE CONTENT =============
+
   Widget _buildProfileContent() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header do Perfil
           Center(
             child: Column(
               children: [
@@ -270,11 +668,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'Seu Perfil',
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -285,7 +679,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          // Botão Edit/Save
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -306,172 +699,20 @@ class _FeedScreenState extends State<FeedScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          // Seção Dados Pessoais
           _buildProfileSection('Dados Pessoais', [
-            _buildProfileTextField(
-              'Nome Completo',
-              _profileNameController,
-              Icons.person,
-              enabled: _profileEditing,
-            ),
-            _buildProfileTextField(
-              'Email',
-              _profileEmailController,
-              Icons.email,
-              enabled: _profileEditing,
-            ),
-            _buildProfileTextField(
-              'Telefone',
-              _profilePhoneController,
-              Icons.phone,
-              enabled: _profileEditing,
-            ),
+            _buildProfileTextField('Nome Completo', _profileNameController, Icons.person, enabled: _profileEditing),
+            _buildProfileTextField('Email', _profileEmailController, Icons.email, enabled: _profileEditing),
+            _buildProfileTextField('Telefone', _profilePhoneController, Icons.phone, enabled: _profileEditing),
           ]),
           const SizedBox(height: 24),
-          // Seção CEP (Obrigatória)
           _buildProfileSection('Endereço', [
-            // Campo CEP com botão de consulta
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '📍 CEP *',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _profileCepController,
-                        enabled: _profileEditing,
-                        maxLength: 8,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: '00000000',
-                          hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.5)),
-                          filled: true,
-                          fillColor: const Color(0xFF0F171A),
-                          prefixIcon: const Icon(Icons.location_on, color: Colors.orange),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: primaryCyan.withValues(alpha: 0.3)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: primaryCyan),
-                          ),
-                          counterText: '',
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _cepError = null;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (_profileEditing)
-                      GestureDetector(
-                        onTap: _profileCepController.text.length == 8
-                            ? _consultarCEP
-                            : null,
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _profileCepController.text.length == 8
-                                ? primaryCyan
-                                : Colors.grey.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: _cepLoading
-                              ? SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      _profileCepController.text.length == 8
-                                          ? Colors.black
-                                          : Colors.grey,
-                                    ),
-                                  ),
-                                )
-                              : Icon(
-                                  Icons.search,
-                                  color: _profileCepController.text.length == 8
-                                      ? Colors.black
-                                      : Colors.grey,
-                                ),
-                        ),
-                      ),
-                  ],
-                ),
-                if (_cepError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      _cepError!,
-                      style: const TextStyle(color: Colors.red, fontSize: 12),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Text(
-                  '* Campo obrigatório - Consulte seu CEP para autopreenchimento de endereço',
-                  style: TextStyle(
-                    color: Colors.orange.withValues(alpha: 0.7),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-            _buildProfileTextField(
-              'Rua',
-              _profileRuaController,
-              Icons.streetview,
-              enabled: _profileEditing,
-            ),
-            _buildProfileTextField(
-              'Número',
-              _profileNumeroController,
-              Icons.home,
-              enabled: _profileEditing,
-            ),
-            _buildProfileTextField(
-              'Complemento',
-              _profileComplementoController,
-              Icons.info_outline,
-              enabled: _profileEditing,
-            ),
-            _buildProfileTextField(
-              'Bairro',
-              _profileBairroController,
-              Icons.location_city,
-              enabled: _profileEditing,
-            ),
-            _buildProfileTextField(
-              'Cidade',
-              _profileCidadeController,
-              Icons.business,
-              enabled: _profileEditing,
-            ),
-            _buildProfileTextField(
-              'Estado',
-              _profileEstadoController,
-              Icons.map,
-              enabled: _profileEditing,
-            ),
+            _buildCEPField(),
+            _buildProfileTextField('Rua', _profileRuaController, Icons.streetview, enabled: _profileEditing),
+            _buildProfileTextField('Número', _profileNumeroController, Icons.home, enabled: _profileEditing),
+            _buildProfileTextField('Complemento', _profileComplementoController, Icons.info_outline, enabled: _profileEditing),
+            _buildProfileTextField('Bairro', _profileBairroController, Icons.location_city, enabled: _profileEditing),
+            _buildProfileTextField('Cidade', _profileCidadeController, Icons.business, enabled: _profileEditing),
+            _buildProfileTextField('Estado', _profileEstadoController, Icons.map, enabled: _profileEditing),
           ]),
           const SizedBox(height: 32),
         ],
@@ -479,7 +720,90 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // NOVO: Conteúdo da aba AI CONVERSATION
+  Widget _buildCEPField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('📍 CEP *', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _profileCepController,
+                enabled: _profileEditing,
+                maxLength: 8,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: '00000000',
+                  hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.5)),
+                  filled: true,
+                  fillColor: const Color(0xFF0F171A),
+                  prefixIcon: const Icon(Icons.location_on, color: Colors.orange),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: primaryCyan.withValues(alpha: 0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: primaryCyan),
+                  ),
+                  counterText: '',
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _cepError = null;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (_profileEditing)
+              GestureDetector(
+                onTap: _profileCepController.text.length == 8 ? _consultarCEP : null,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _profileCepController.text.length == 8 ? primaryCyan : Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: _cepLoading
+                      ? SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              _profileCepController.text.length == 8 ? Colors.black : Colors.grey,
+                            ),
+                          ),
+                        )
+                      : Icon(Icons.search, color: _profileCepController.text.length == 8 ? Colors.black : Colors.grey),
+                ),
+              ),
+          ],
+        ),
+        if (_cepError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(_cepError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+          ),
+        const SizedBox(height: 8),
+        Text(
+          '* Campo obrigatório - Consulte seu CEP para autopreenchimento de endereço',
+          style: TextStyle(color: Colors.orange.withValues(alpha: 0.7), fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  // ============= AI CONVERSATION CONTENT =============
+
   Widget _buildAIConversationContent() {
     return Column(
       children: [
@@ -491,15 +815,9 @@ class _FeedScreenState extends State<FeedScreen> {
                     children: [
                       Icon(Icons.psychology, size: 60, color: primaryCyan),
                       const SizedBox(height: 16),
-                      const Text(
-                        'Nenhuma conversa iniciada',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
+                      const Text('Nenhuma conversa iniciada', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Clique no botão "Ask AI" para começar',
-                        style: TextStyle(color: Colors.grey),
-                      ),
+                      const Text('Clique no botão "Ask AI" para começar', style: TextStyle(color: Colors.grey)),
                     ],
                   ),
                 )
@@ -521,10 +839,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         ),
                         child: Text(
                           message.text,
-                          style: TextStyle(
-                            color: message.isUser ? Colors.black : Colors.white,
-                            fontSize: 14,
-                          ),
+                          style: TextStyle(color: message.isUser ? Colors.black : Colors.white, fontSize: 14),
                         ),
                       ),
                     );
@@ -553,8 +868,6 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // --- WIDGETS AUXILIARES ---
-
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
@@ -566,55 +879,38 @@ class _FeedScreenState extends State<FeedScreen> {
               IconButton(
                 icon: const Icon(Icons.search, color: Colors.grey),
                 onPressed: () {
-                  setState(() {
-                    _selectedIndex = 1; // Search
-                  });
+                  setState(() => _selectedIndex = 1);
                 },
               ),
-              IconButton(
-                icon: Stack(
-                  children: [
-                    Icon(Icons.notifications_none, color: Colors.grey),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: CircleAvatar(radius: 4, backgroundColor: Colors.red),
-                    )
-                  ],
-                ),
-                onPressed: () {
-                  setState(() {
-                    _selectedIndex = 2; // Notifications
-                  });
-                },
+              Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_none, color: Colors.grey),
+                    onPressed: () {
+                      setState(() => _selectedIndex = 2);
+                    },
+                  ),
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: CircleAvatar(radius: 4, backgroundColor: Colors.red),
+                  )
+                ],
               ),
             ],
           ),
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.psychology, color: primaryCyan),
-                const SizedBox(width: 5),
-                Text(
-                  'DevStack',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(' AI', style: TextStyle(color: primaryCyan, fontWeight: FontWeight.bold)),
-              ],
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.psychology, color: primaryCyan),
+              const SizedBox(width: 5),
+              Text('DevStack', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(' AI', style: TextStyle(color: primaryCyan, fontWeight: FontWeight.bold)),
+            ],
           ),
           GestureDetector(
             onTap: _showAISettingsModal,
-            child: Icon(
-              Icons.settings,
-              color: primaryCyan,
-              size: 24,
-            ),
+            child: Icon(Icons.settings, color: primaryCyan, size: 24),
           ),
         ],
       ),
@@ -633,9 +929,7 @@ class _FeedScreenState extends State<FeedScreen> {
           bool isSelected = _selectedTagIndex == index;
           return GestureDetector(
             onTap: () {
-              setState(() {
-                _selectedTagIndex = index;
-              });
+              setState(() => _selectedTagIndex = index);
             },
             child: Container(
               margin: const EdgeInsets.only(right: 10),
@@ -645,10 +939,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 border: Border.all(color: isSelected ? primaryCyan : Colors.grey.withValues(alpha: 0.3)),
                 boxShadow: isSelected ? [BoxShadow(color: primaryCyan.withValues(alpha: 0.3), blurRadius: 8)] : [],
               ),
-              child: Text(
-                tags[index],
-                style: TextStyle(color: isSelected ? primaryCyan : Colors.grey),
-              ),
+              child: Text(tags[index], style: TextStyle(color: isSelected ? primaryCyan : Colors.grey)),
             ),
           );
         },
@@ -656,7 +947,7 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  Widget _buildPostCard() {
+  Widget _buildPostCardWidget(Post post) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -676,103 +967,75 @@ class _FeedScreenState extends State<FeedScreen> {
                 child: Icon(Icons.person, size: 12, color: primaryCyan),
               ),
               const SizedBox(width: 8),
-              const Expanded(
-                child: Text('@TechEnthusiast', style: TextStyle(fontSize: 12, color: Colors.grey), overflow: TextOverflow.ellipsis),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(post.username, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    Text(post.userHandle, style: TextStyle(fontSize: 10, color: Colors.grey)),
+                  ],
+                ),
               ),
-              const Text('3h ago', style: TextStyle(fontSize: 10, color: Colors.grey)),
+              Text(post.timeAgo, style: const TextStyle(fontSize: 10, color: Colors.grey)),
             ],
           ),
           const SizedBox(height: 12),
-          Text(
-            'Optimizing dynamic content loading in React with Hooks?',
-            style: TextStyle(color: primaryCyan, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
+          Text(post.title, style: TextStyle(color: primaryCyan, fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          const Text(
-            'Learn about optimizing dynamic content loading from the miners in React hooks.',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
-          ),
+          Text(post.description, style: TextStyle(color: Colors.grey, fontSize: 12)),
           const SizedBox(height: 12),
-          _buildCodeSnippet(),
-          const SizedBox(height: 12),
-          _buildCardFooter(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSimplePostCard(String title) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
-              const Icon(Icons.more_vert, size: 18, color: Colors.grey),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _buildCodeSnippet(minimized: true),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCodeSnippet({bool minimized = false}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F171A),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'useEffect(() => {',
-            style: GoogleFonts.firaCode(color: Colors.greenAccent, fontSize: 12),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: Text(
-              'const fetchData = async () => {',
-              style: GoogleFonts.firaCode(color: primaryCyan, fontSize: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F171A),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Text(
+                post.code,
+                style: GoogleFonts.firaCode(color: Colors.greenAccent, fontSize: 11),
+              ),
             ),
           ),
-          if (!minimized) ...[
-            const Padding(padding: EdgeInsets.only(left: 32), child: Text('...', style: TextStyle(color: Colors.white))),
-            Text('}, []);', style: GoogleFonts.firaCode(color: Colors.greenAccent, fontSize: 12)),
-          ]
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () {
+                  setState(() => post.isLiked = !post.isLiked);
+                },
+                child: Row(
+                  children: [
+                    Icon(post.isLiked ? Icons.favorite : Icons.favorite_border, size: 16, color: post.isLiked ? Colors.red : primaryCyan),
+                    const SizedBox(width: 4),
+                    Text('${post.likes + (post.isLiked ? 1 : 0)}', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Row(
+                children: [
+                  const Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text('${post.comments}', style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+              const SizedBox(width: 12),
+              const Icon(Icons.share_outlined, size: 16, color: Colors.grey),
+              const Spacer(),
+              GestureDetector(
+                onTap: () {
+                  setState(() => post.isFavorited = !post.isFavorited);
+                },
+                child: Icon(post.isFavorited ? Icons.bookmark : Icons.bookmark_border, size: 16, color: primaryCyan),
+              ),
+              ...post.tags.map((tag) => _miniTag(tag)),
+            ],
+          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildCardFooter() {
-    return Row(
-      children: [
-        Icon(Icons.arrow_upward, size: 16, color: primaryCyan),
-        const SizedBox(width: 4),
-        const Text('1,489', style: TextStyle(fontSize: 12)),
-        const SizedBox(width: 12),
-        const Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
-        const SizedBox(width: 4),
-        const Text('42', style: TextStyle(fontSize: 12)),
-        const SizedBox(width: 12),
-        const Icon(Icons.share_outlined, size: 16, color: Colors.grey),
-        const Spacer(),
-        _miniTag("React"),
-        _miniTag("Hooks"),
-      ],
     );
   }
 
@@ -790,7 +1053,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildFloatingAskButton() {
     return Positioned(
-      bottom: 20,
+      bottom: 80,
       right: 20,
       child: GestureDetector(
         onTap: _showAskAIDialog,
@@ -799,13 +1062,7 @@ class _FeedScreenState extends State<FeedScreen> {
           decoration: BoxDecoration(
             color: primaryCyan,
             borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                color: primaryCyan.withValues(alpha: 0.6),
-                blurRadius: 20,
-                spreadRadius: 2,
-              )
-            ],
+            boxShadow: [BoxShadow(color: primaryCyan.withValues(alpha: 0.6), blurRadius: 20, spreadRadius: 2)],
           ),
           child: const Row(
             mainAxisSize: MainAxisSize.min,
@@ -984,7 +1241,6 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _sendQuestionToAI(String question) async {
-    // Adicionar pergunta do usuário à conversa
     setState(() {
       _chatMessages.add(ChatMessage(
         text: question,
@@ -992,13 +1248,12 @@ class _FeedScreenState extends State<FeedScreen> {
         timestamp: DateTime.now(),
       ));
       _isLoadingAI = true;
-      _selectedIndex = 5; // Ir para aba de conversa
+      _selectedIndex = 5;
     });
 
     try {
-      // Obter chave API do arquivo .env
       final apiKey = dotenv.env['GEMINI_API_KEY'];
-      
+
       if (apiKey == null || apiKey.isEmpty || apiKey.contains('SUA_CHAVE')) {
         setState(() {
           _chatMessages.add(ChatMessage(
@@ -1093,7 +1348,6 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
-  // Método para consultar CEP
   Future<void> _consultarCEP() async {
     final cep = _profileCepController.text.replaceAll(RegExp(r'\D'), '');
 
@@ -1155,7 +1409,6 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
-  // Widget para seção de perfil
   Widget _buildProfileSection(String title, List<Widget> children) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1189,7 +1442,6 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // Widget para campo de texto do perfil
   Widget _buildProfileTextField(
     String label,
     TextEditingController controller,
@@ -1241,13 +1493,12 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildBottomNav() {
     final navItems = [
       {'icon': Icons.home_filled, 'label': 'Home'},
+      {'icon': Icons.search, 'label': 'Search'},
+      {'icon': Icons.notifications_none, 'label': 'Notifs'},
       {'icon': Icons.people_outline, 'label': 'Communities'},
       {'icon': Icons.person_outline, 'label': 'Profile'},
       {'icon': Icons.psychology, 'label': 'AI Chat'},
     ];
-
-    // Mapa de índices para corresponder aos _selectedIndex originais
-    final indexMap = [0, 3, 4, 5]; // Home, Communities, Profile, AI Chat
 
     return Container(
       color: const Color(0xFF0B1215),
@@ -1256,18 +1507,23 @@ class _FeedScreenState extends State<FeedScreen> {
         children: List.generate(
           navItems.length,
           (index) => GestureDetector(
-            onTap: () {
-              print('Clicado em aba: $index');
-              setState(() {
-                _selectedIndex = indexMap[index];
-              });
-            },
+            onTap: () => setState(() => _selectedIndex = index),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
-              child: Icon(
-                navItems[index]['icon'] as IconData,
-                color: _selectedIndex == indexMap[index] ? primaryCyan : Colors.grey,
-                size: 24,
+              padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    navItems[index]['icon'] as IconData,
+                    color: _selectedIndex == index ? primaryCyan : Colors.grey,
+                    size: 24,
+                  ),
+                  Text(navItems[index]['label'] as String,
+                      style: TextStyle(
+                          color: _selectedIndex == index ? primaryCyan : Colors.grey,
+                          fontSize: 9,
+                          fontWeight: _selectedIndex == index ? FontWeight.bold : FontWeight.normal)),
+                ],
               ),
             ),
           ),
