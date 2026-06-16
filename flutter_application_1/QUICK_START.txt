@@ -1,0 +1,43 @@
+# ⚡ QUICK START - IA do Seu App
+
+## 🎯 3 Passos para Funcionar
+
+### **PASSO 1: Gerar Chave (2 minutos)**
+1. Abra: https://aistudio.google.com/app/apikeys
+2. Clique: **"Create API Key"**
+3. Copie a chave (Ctrl+C)
+
+### **PASSO 2: Configurar Chave (1 minuto)**
+1. Abra arquivo: `flutter_application_1/.env`
+2. Substitua: `SUA_CHAVE_GEMINI_AQUI` pela sua chave
+3. Salve (Ctrl+S)
+
+### **PASSO 3: Executar (1 minuto)**
+```bash
+# Terminal na pasta flutter_application_1/
+flutter pub get
+flutter run
+```
+
+---
+
+## ✅ Testando
+
+1. Clique no botão flutuante "Ask AI"
+2. Digite: "Qual é a capital do Brasil?"
+3. Veja a resposta aparecer!
+
+---
+
+## ❌ Se der Erro?
+
+| Erro | Solução |
+|------|---------|
+| "Chave não configurada" | Preencheu o .env? |
+| 429 (Too Many Requests) | Aguarde 24h ou compre créditos |
+| 401 (Inválida) | Chave errada - gere nova |
+| Sem resposta | Internet ativa? |
+
+---
+
+**Dúvidas?** Leia: `SETUP_IA.md` (mais detalhado)
