@@ -120,7 +120,7 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   int _selectedIndex = 0;
-  int _selectedTagIndex = 3;
+  int _selectedTagIndex = 0;
   bool _isShowingSearch = false;
   bool _isShowingNotifications = false;
   late AnimationController _transitionController;
@@ -137,10 +137,11 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   String _selectedAI = 'gemini';
   String _searchQuery = '';
   TextEditingController _searchController = TextEditingController();
+  final TextEditingController _aiMessageController = TextEditingController();
 
   final Color primaryCyan = const Color(0xFF4EE2EC);
   final Color cardColor = const Color(0xFF162126);
-  final List<String> tags = ['Python', 'React', 'AI', 'JavaScript'];
+  final List<String> tags = ['Todos', 'Python', 'React', 'AI', 'JavaScript'];
 
   // Profile Controllers
   late TextEditingController _profileNameController;
@@ -374,12 +375,22 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     _profileNumeroController.dispose();
     _profileComplementoController.dispose();
     _searchController.dispose();
+    _aiMessageController.dispose();
     super.dispose();
   }
 
   void _changeScreen() {
     _transitionController.reset();
     _transitionController.forward();
+  }
+
+  List<Post> get _feedPosts {
+    if (_selectedTagIndex == 0) return _allPosts;
+
+    final selectedTag = tags[_selectedTagIndex].toLowerCase();
+    return _allPosts.where((post) {
+      return post.tags.any((tag) => tag.toLowerCase() == selectedTag);
+    }).toList();
   }
 
   @override
@@ -400,7 +411,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 ),
               ],
             ),
-            _buildFloatingAskButton(),
+            if (_selectedIndex != 3) _buildFloatingAskButton(),
           ],
         ),
       ),
@@ -433,34 +444,82 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   // ============= FEED CONTENT =============
 
   Widget _buildFeedContent() {
+    final feedPosts = _feedPosts;
+    final selectedTag = tags[_selectedTagIndex];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Text(
-            'My Feed',
-            style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'My Feed',
+                  style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: primaryCyan.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: primaryCyan.withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  '${feedPosts.length} posts',
+                  style: TextStyle(color: primaryCyan, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Text('Top Tags', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          child: Text(
+            selectedTag == 'Todos' ? 'Explore todos os assuntos' : 'Filtrando por $selectedTag',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
         ),
         _buildTagsRow(),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _allPosts.length + 1,
-            itemBuilder: (context, index) {
-              if (index == _allPosts.length) {
-                return const SizedBox(height: 80);
-              }
-              return _buildPostCardWidget(_allPosts[index]);
-            },
-          ),
+          child: feedPosts.isEmpty
+              ? _buildEmptyFeedState(selectedTag)
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: feedPosts.length + 1,
+                  itemBuilder: (context, index) {
+                    if (index == feedPosts.length) {
+                      return const SizedBox(height: 80);
+                    }
+                    return _buildPostCardWidget(feedPosts[index]);
+                  },
+                ),
         ),
       ],
+    );
+  }
+
+  Widget _buildEmptyFeedState(String selectedTag) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.article_outlined, color: primaryCyan, size: 44),
+            const SizedBox(height: 12),
+            const Text('Nenhum post encontrado', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 6),
+            Text(
+              'Ainda não há publicações em $selectedTag.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -892,7 +951,68 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
+        _buildAIMessageInput(),
       ],
+    );
+  }
+
+  Widget _buildAIMessageInput() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0B1215),
+          border: Border(top: BorderSide(color: primaryCyan.withValues(alpha: 0.18))),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _aiMessageController,
+                enabled: !_isLoadingAI,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                style: const TextStyle(color: Colors.white),
+                onSubmitted: (_) => _sendAIMessageFromInput(),
+                decoration: InputDecoration(
+                  hintText: 'Pergunte algo para a IA...',
+                  hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.7)),
+                  filled: true,
+                  fillColor: const Color(0xFF0F171A),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide(color: primaryCyan.withValues(alpha: 0.25)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide(color: primaryCyan),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: _isLoadingAI ? null : _sendAIMessageFromInput,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: _isLoadingAI ? Colors.grey.withValues(alpha: 0.35) : primaryCyan,
+                  shape: BoxShape.circle,
+                  boxShadow: _isLoadingAI
+                      ? []
+                      : [BoxShadow(color: primaryCyan.withValues(alpha: 0.35), blurRadius: 14, spreadRadius: 1)],
+                ),
+                child: const Icon(Icons.send_rounded, color: Colors.black, size: 22),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -979,17 +1099,31 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
           bool isSelected = _selectedTagIndex == index;
           return GestureDetector(
             onTap: () {
-              setState(() => _selectedTagIndex = index);
+              setState(() {
+                _selectedTagIndex = index;
+                _isShowingSearch = false;
+                _isShowingNotifications = false;
+              });
             },
             child: Container(
               margin: const EdgeInsets.only(right: 10),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               decoration: BoxDecoration(
+                color: isSelected ? primaryCyan.withValues(alpha: 0.14) : Colors.transparent,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: isSelected ? primaryCyan : Colors.grey.withValues(alpha: 0.3)),
                 boxShadow: isSelected ? [BoxShadow(color: primaryCyan.withValues(alpha: 0.3), blurRadius: 8)] : [],
               ),
-              child: Text(tags[index], style: TextStyle(color: isSelected ? primaryCyan : Colors.grey)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (index == 0) ...[
+                    Icon(Icons.dynamic_feed_outlined, color: isSelected ? primaryCyan : Colors.grey, size: 15),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(tags[index], style: TextStyle(color: isSelected ? primaryCyan : Colors.grey)),
+                ],
+              ),
             ),
           );
         },
@@ -1277,9 +1411,10 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
-              if (questionController.text.isNotEmpty) {
+              final question = questionController.text.trim();
+              if (question.isNotEmpty) {
                 Navigator.pop(context);
-                _sendQuestionToAI(questionController.text);
+                _sendQuestionToAI(question);
                 questionController.clear();
               }
             },
@@ -1290,7 +1425,16 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _sendAIMessageFromInput() {
+    final question = _aiMessageController.text.trim();
+    if (question.isEmpty || _isLoadingAI) return;
+
+    _aiMessageController.clear();
+    _sendQuestionToAI(question);
+  }
+
   Future<void> _sendQuestionToAI(String question) async {
+    _changeScreen();
     setState(() {
       _chatMessages.add(ChatMessage(
         text: question,
@@ -1298,16 +1442,18 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
         timestamp: DateTime.now(),
       ));
       _isLoadingAI = true;
-      _selectedIndex = 5;
+      _selectedIndex = 3;
+      _isShowingSearch = false;
+      _isShowingNotifications = false;
     });
 
     try {
-      final apiKey = dotenv.env['GEMINI_API_KEY'];
+      final apiKey = (dotenv.env['GEMINI_API_KEY'] ?? '').trim();
 
-      if (apiKey == null || apiKey.isEmpty || apiKey.contains('SUA_CHAVE')) {
+      if (apiKey.isEmpty || apiKey.contains('SUA_CHAVE')) {
         setState(() {
           _chatMessages.add(ChatMessage(
-            text: '❌ Erro: Chave API do Gemini não configurada!\n\nPor favor:\n1. Vá para https://aistudio.google.com/app/apikeys\n2. Crie uma nova chave API\n3. Adicione ao arquivo .env: GEMINI_API_KEY=sua_chave_aqui',
+            text: '❌ Erro: chave API do Gemini não configurada!\n\nCrie uma chave no Google AI Studio e atualize o arquivo .env assim:\nGEMINI_API_KEY=sua_chave_aqui',
             isUser: false,
             timestamp: DateTime.now(),
           ));
@@ -1317,7 +1463,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
       }
 
       final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey',
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey',
       );
 
       final response = await http.post(
@@ -1327,7 +1473,10 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
           'contents': [
             {
               'parts': [
-                {'text': question}
+                {
+                  'text':
+                      'Responda sempre em português do Brasil, de forma clara e objetiva. Se a pergunta envolver código, explique com exemplos simples.\n\nPergunta do usuário: $question'
+                }
               ]
             }
           ]
@@ -1338,21 +1487,41 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
       );
 
       if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        final aiResponse = jsonResponse['candidates'][0]['content']['parts'][0]['text'] ?? 'Desculpe, não consegui gerar uma resposta.';
+        final jsonResponse = jsonDecode(response.body) as Map<String, dynamic>;
+        final candidates = jsonResponse['candidates'];
+        String aiResponse = '';
+
+        if (candidates is List && candidates.isNotEmpty) {
+          final firstCandidate = candidates.first;
+          if (firstCandidate is Map<String, dynamic>) {
+            final content = firstCandidate['content'];
+            if (content is Map<String, dynamic>) {
+              final parts = content['parts'];
+              if (parts is List && parts.isNotEmpty) {
+                aiResponse = parts
+                    .whereType<Map<String, dynamic>>()
+                    .map((part) => part['text']?.toString() ?? '')
+                    .where((text) => text.isNotEmpty)
+                    .join('\n')
+                    .trim();
+              }
+            }
+          }
+        }
 
         setState(() {
           _chatMessages.add(ChatMessage(
-            text: aiResponse,
+            text: aiResponse.isNotEmpty ? aiResponse : 'A IA respondeu, mas nao retornou texto. Tente reformular a pergunta.',
             isUser: false,
             timestamp: DateTime.now(),
           ));
           _isLoadingAI = false;
         });
       } else if (response.statusCode == 429) {
+        final errorMessage = _extractGeminiErrorMessage(response.body);
         setState(() {
           _chatMessages.add(ChatMessage(
-            text: '⏳ Limite de requisições atingido (429).\n\nIsso significa:\n• Você excedeu a quota diária (1000 req/dia no plano gratuito)\n• Aguarde até amanhã ou atualize para um plano pago\n• Acesse: https://console.cloud.google.com/billing',
+            text: '⏳ Limite da API atingido (429).\n\nMensagem do Google:\n$errorMessage\n\nTente novamente mais tarde ou verifique a quota/billing do projeto no Google Cloud.',
             isUser: false,
             timestamp: DateTime.now(),
           ));
@@ -1377,9 +1546,10 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
           _isLoadingAI = false;
         });
       } else {
+        final errorPreview = _extractGeminiErrorMessage(response.body);
         setState(() {
           _chatMessages.add(ChatMessage(
-            text: '❌ Erro ${response.statusCode}:\n${response.body.substring(0, 200)}',
+            text: '❌ Erro ${response.statusCode}:\n$errorPreview',
             isUser: false,
             timestamp: DateTime.now(),
           ));
@@ -1396,6 +1566,25 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
         _isLoadingAI = false;
       });
     }
+  }
+
+  String _extractGeminiErrorMessage(String responseBody) {
+    String message = responseBody;
+
+    try {
+      final errorJson = jsonDecode(responseBody) as Map<String, dynamic>;
+      final error = errorJson['error'];
+      if (error is Map<String, dynamic> && error['message'] != null) {
+        message = error['message'].toString();
+      }
+    } catch (_) {
+      // Mantem o corpo original quando a resposta nao for JSON.
+    }
+
+    if (message.length > 500) {
+      return message.substring(0, 500);
+    }
+    return message;
   }
 
   Future<void> _consultarCEP() async {
